@@ -1,45 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Image  } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
-// Map emotions to images
+// Map emotions to their corresponding image assets
 const emotionImages = {
   Happy: require('@/assets/images/happyEmoji.png'),
   Surprise: require('@/assets/images/surpriseEmoji.png'),
   Neutral: require('@/assets/images/neutralEmoji.png'),
   Sad: require('@/assets/images/sadEmoji.png'),
-  Stressed: require('@/assets/images/stressEmoji.png'),
+  Stress: require('@/assets/images/stressEmoji.png'),
   Angry: require('@/assets/images/angryEmoji.png'),
 };
 
-// Dummy data for emotions
-const dummyEmotions = {
-  '2025-02-14': 'Surprise',
-  '2025-02-15': 'Surprise',
-  '2025-02-16': 'Neutral',
-  '2025-02-17': 'Sad',
-  '2025-02-18': 'Stressed',
-  '2025-02-19': 'Angry',
-  '2025-02-20': 'Angry',
-  '2025-02-21': 'Happy',
-  '2025-02-22': 'Happy',
-  '2025-02-23': 'Neutral',
-  '2025-02-24': 'Sad',
-  '2025-02-25': 'Stressed',
-  '2025-02-26': 'Angry',
-  '2025-02-27': 'Happy'
-};
-
+// Define color coding for different emotional states
 const emotionColors = {
-  Happy: '#FFA500',
-  Surprise: '#87CEEB',
-  Neutral: '#FFD700',
-  Sad: '#00CED1',
-  Stressed: '#9370DB',
-  Angry: '#FF6B6B'
+  Happy: '#FFA500',    // Orange
+  Surprise: '#87CEEB', // Sky Blue
+  Neutral: '#FFD700',  // Gold
+  Sad: '#00CED1',      // Turquoise
+  Stress: '#9370DB',   // Medium Purple
+  Angry: '#FF6B6B'     // Light Red
 };
 
-// Helper functions for date manipulation
+// Helper functions for calendar date manipulation
 const getDaysInMonth = (year: number, month: number) => {
   return new Date(year, month + 1, 0).getDate();
 };
@@ -48,39 +31,58 @@ const getFirstDayOfMonth = (year: number, month: number) => {
   return new Date(year, month, 1).getDay();
 };
 
+// Month names for calendar header display
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-const Calendar = ({ onMonthChange }) => {
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 1)); // November 2025
+// API URL for backend connection - should be updated for production
+const API_BASE_URL = 'http://192.168.8.102:5000';
+
+/**
+ * Calendar Component
+ * Displays a monthly calendar with emotion color-coding
+ * 
+ * @param {Function} onMonthChange - Callback when user changes month
+ * @param {Array} emotions - Emotion data for the current month
+ */
+const Calendar = ({ onMonthChange, emotions }) => {
+  // Track current and selected calendar dates
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
 
+  // Navigate to previous month
   const handlePrevMonth = () => {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1);
     setCurrentDate(newDate);
     onMonthChange(newDate);
   };
 
+  // Navigate to next month
   const handleNextMonth = () => {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1);
     setCurrentDate(newDate);
     onMonthChange(newDate);
   };
 
+  // Initialize calendar with current month's data
   useEffect(() => {
     onMonthChange(currentDate);
   }, []);
 
+  /**
+   * Generate calendar days array including prev/next month overflow days
+   * Creates a full 6-row calendar grid (42 days)
+   */
   const generateCalendarDays = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    
+
     const daysInMonth = getDaysInMonth(year, month);
     const firstDay = getFirstDayOfMonth(year, month);
-    
-    // Get days from previous month
+
+    // Add days from previous month to fill first row
     const daysInPrevMonth = getDaysInMonth(year, month - 1);
     const prevMonthDays = Array.from({ length: firstDay }, (_, i) => ({
       day: daysInPrevMonth - firstDay + i + 1,
@@ -88,18 +90,18 @@ const Calendar = ({ onMonthChange }) => {
       full: new Date(year, month - 1, daysInPrevMonth - firstDay + i + 1)
     }));
 
-    // Current month days
+    // Add all days from current month
     const currentMonthDays = Array.from({ length: daysInMonth }, (_, i) => ({
       day: i + 1,
       month: 'current',
       full: new Date(year, month, i + 1)
     }));
 
-    // Calculate remaining days needed for next month
+    // Calculate remaining days needed from next month to complete the grid
     const totalDays = prevMonthDays.length + currentMonthDays.length;
-    const remainingDays = 40 - totalDays; // 6 rows × 7 days = 42
+    const remainingDays = 42 - totalDays; // 6 rows × 7 days = 42
 
-    // Next month days
+    // Add days from next month to complete the grid
     const nextMonthDays = Array.from({ length: remainingDays }, (_, i) => ({
       day: i + 1,
       month: 'next',
@@ -109,27 +111,57 @@ const Calendar = ({ onMonthChange }) => {
     return [...prevMonthDays, ...currentMonthDays, ...nextMonthDays];
   };
 
-  const formatDateForEmotion = (date: Date) => {
+  /**
+   * Format date object to YYYY-MM-DD string for emotion lookup
+   */
+  const formatDateForEmotion = (date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
 
-  const getEmotionColor = (date: Date) => {
+  /**
+   * Find emotion recorded for a specific date
+   * Handles both direct date objects and MongoDB date objects
+   */
+  const getEmotionForDate = (date) => {
     const dateStr = formatDateForEmotion(date);
-    const emotion = dummyEmotions[dateStr];
+    if (!emotions || !emotions.length) return null;
+
+    const emotionForDate = emotions.find(emotion => {
+      // Handle MongoDB date format with $date field
+      const emotionDate = emotion.createdAt.$date ?
+        new Date(emotion.createdAt.$date) :
+        new Date(emotion.createdAt);
+
+      const emotionDateStr = formatDateForEmotion(emotionDate);
+      return emotionDateStr === dateStr;
+    });
+
+    return emotionForDate ? emotionForDate.mood : null;
+  };
+
+  /**
+   * Get color code for a specific date based on recorded emotion
+   */
+  const getEmotionColor = (date) => {
+    const emotion = getEmotionForDate(date);
     return emotion ? emotionColors[emotion] : '#F0F0F0';
   };
 
-  const renderDay = (dayInfo: { day: number; month: string; full: Date }) => {
+  /**
+   * Render individual day cell in calendar
+   * Days from current month show emotion colors
+   * Days from prev/next months are faded
+   */
+  const renderDay = (dayInfo) => {
     const isCurrentMonth = dayInfo.month === 'current';
+    const emotion = getEmotionForDate(dayInfo.full);
     const dayStyle = [
       styles.dayButton,
-      { 
+      {
         backgroundColor: isCurrentMonth ? getEmotionColor(dayInfo.full) : '#F0F0F0',
         opacity: isCurrentMonth ? 1 : 0.3
       }
     ];
-
-    
 
     return (
       <TouchableOpacity
@@ -145,8 +177,8 @@ const Calendar = ({ onMonthChange }) => {
   };
 
   return (
-    
     <View style={styles.calendarContainer}>
+      {/* Calendar header with month/year display and navigation buttons */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handlePrevMonth}>
           <Text style={styles.headerButton}>&lt;</Text>
@@ -158,13 +190,15 @@ const Calendar = ({ onMonthChange }) => {
           <Text style={styles.headerButton}>&gt;</Text>
         </TouchableOpacity>
       </View>
-      
+
+      {/* Weekday header row */}
       <View style={styles.weekDays}>
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
           <Text key={day} style={styles.weekDay}>{day}</Text>
         ))}
       </View>
-      
+
+      {/* Calendar days grid */}
       <View style={styles.daysGrid}>
         {generateCalendarDays().map(dayInfo => renderDay(dayInfo))}
       </View>
@@ -172,82 +206,102 @@ const Calendar = ({ onMonthChange }) => {
   );
 };
 
-const MoodCount = ({ currentDate }) => {
+/**
+ * MoodCount Component
+ * Displays statistics about recorded moods for the current month
+ * Shows gauge visualization of mood distribution
+ * 
+ * @param {Date} currentDate - Date object for the current view month
+ * @param {Array} emotions - Array of emotion records
+ */
+const MoodCount = ({ currentDate, emotions }) => {
+  // Default emotion count structure
   const [counts, setCounts] = useState({
     Happy: 0,
     Surprise: 0,
     Neutral: 0,
     Sad: 0,
-    Stressed: 0,
+    Stress: 0,
     Angry: 0
   });
   const navigation = useNavigation();
   const [totalMoods, setTotalMoods] = useState(0);
 
+  // Calculate mood counts whenever month changes or emotions data updates
   useEffect(() => {
+    if (!emotions || !emotions.length) return;
+
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
-    
-    // Count emotions for the current month
-    const monthCounts = Object.entries(dummyEmotions).reduce((acc, [date, emotion]) => {
-      const [emotionYear, emotionMonth] = date.split('-').map(Number);
+
+    // Count emotions for the current month only
+    const monthCounts = emotions.reduce((acc, emotion) => {
+      const emotionDate = new Date(emotion.createdAt.$date || emotion.createdAt);
+      const emotionYear = emotionDate.getFullYear();
+      const emotionMonth = emotionDate.getMonth() + 1;
+
+      // Only count if emotion belongs to the current view month
       if (emotionYear === year && emotionMonth === month) {
-        acc[emotion] = (acc[emotion] || 0) + 1;
+        acc[emotion.mood] = (acc[emotion.mood] || 0) + 1;
       }
       return acc;
     }, {});
 
-    // Update the counts state
+    // Update the counts state with calculated values
     setCounts(prev => ({
       Happy: monthCounts.Happy || 0,
       Surprise: monthCounts.Surprise || 0,
       Neutral: monthCounts.Neutral || 0,
       Sad: monthCounts.Sad || 0,
-      Stressed: monthCounts.Stressed || 0,
+      Stress: monthCounts.Stress || 0,
       Angry: monthCounts.Angry || 0
     }));
 
-    // Calculate total moods
+    // Calculate total mood entries for percentage calculations
     const total = Object.values(monthCounts).reduce((sum, count) => sum + count, 0);
     setTotalMoods(total);
-  }, [currentDate]);
+  }, [currentDate, emotions]);
 
-  // Calculate width for a single emotion
+  /**
+   * Calculate width percentage for mood gauge visualization
+   */
   const calculateWidth = (emotion) => {
     return totalMoods > 0 ? `${(counts[emotion] / totalMoods) * 100}%` : '0%';
   };
 
   return (
     <View style={styles.moodCountContainer}>
+      {/* Header with title and history button */}
       <View style={styles.moodCountHeader}>
         <Text style={styles.moodCountTitle}>Mood Count</Text>
         <TouchableOpacity onPress={() => navigation.navigate('MoodHistory')}>
           <Text style={styles.historyButton}>History</Text>
         </TouchableOpacity>
       </View>
-      
+
+      {/* Mood distribution gauge visualization */}
       <View style={styles.gaugeContainer}>
         <View style={styles.gauge}>
           {Object.keys(emotionColors).map((emotion) => {
             const width = calculateWidth(emotion);
             return width !== '0%' ? (
-              <View 
+              <View
                 key={emotion}
                 style={[
-                  styles.gaugeSegment, 
-                  { 
+                  styles.gaugeSegment,
+                  {
                     backgroundColor: emotionColors[emotion],
                     width: width
                   }
-                ]} 
+                ]}
               />
             ) : null;
           })}
         </View>
         <Text style={styles.gaugeNumber}>{totalMoods}</Text>
       </View>
-      
-      {/* Replace Emotion Dots with Images */}
+
+      {/* Emotion icons grid with counts */}
       <View style={styles.emotionsGrid}>
         {Object.entries(counts).map(([emotion, count]) => (
           <View key={emotion} style={styles.emotionItem}>
@@ -260,28 +314,116 @@ const MoodCount = ({ currentDate }) => {
   );
 };
 
+/**
+ * Main MoodTrackerScreen Component
+ * Combines Calendar and MoodCount with overall app functionality
+ */
 export default function MoodTrackerScreen() {
-  const [currentViewDate, setCurrentViewDate] = useState(new Date(2025, 1));
+  const navigation = useNavigation();
+  const [currentViewDate, setCurrentViewDate] = useState(new Date());
+  const [emotions, setEmotions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [todayEmotion, setTodayEmotion] = useState('Neutral');
 
-      // Get today's date in YYYY-MM-DD format
-  const today = new Date();
-  const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  /**
+   * Fetch emotions data for a specific month from the API
+   */
+  const fetchEmotions = async (year, month) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/emotions/month/${year}/${month}`);
+      const data = await response.json();
+      setEmotions(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching emotions:', err);
+      setError('Failed to load emotions');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Get today's emotion or default to "Neutral"
-  const todayEmotion = dummyEmotions[formattedToday] || 'Neutral';
-  
+  // Initial data load on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      const today = new Date();
+      const formattedToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      // Fetch initial emotions data
+      await fetchEmotions(currentViewDate.getFullYear(), currentViewDate.getMonth() + 1);
+
+      // Find today's emotion record if it exists
+      const todayEmotion = emotions.find(emotion => {
+        const emotionDate = emotion.createdAt.$date ?
+          new Date(emotion.createdAt.$date) :
+          new Date(emotion.createdAt);
+
+        const emotionDateStr = `${emotionDate.getFullYear()}-${String(emotionDate.getMonth() + 1).padStart(2, '0')}-${String(emotionDate.getDate()).padStart(2, '0')}`;
+        return emotionDateStr === formattedToday;
+      })?.mood || 'Neutral';
+
+      setTodayEmotion(todayEmotion);
+    };
+
+    fetchData();
+  }, []);
+
+  // Fetch new data when month changes
+  useEffect(() => {
+    fetchEmotions(currentViewDate.getFullYear(), currentViewDate.getMonth() + 1);
+  }, [currentViewDate]);
+
+  // Handle month change from Calendar component
+  const handleMonthChange = (date) => {
+    setCurrentViewDate(date);
+  };
+
+  // Show loading indicator when initial data is being fetched
+  if (loading && emotions.length === 0) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#5fddf3" />
+        <Text>Loading your mood data...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
-       {/* Emotion Display with Dynamic Styling */}
-      <View style={[styles.todayEmotionContainer, { backgroundColor: emotionColors[todayEmotion] || '#FFD700' }]}>
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => fetchEmotions(currentViewDate.getFullYear(), currentViewDate.getMonth() + 1)}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Emotion Display with Dynamic Styling */}
+      {/* <View style={[styles.todayEmotionContainer, { backgroundColor: emotionColors[todayEmotion] || '#FFD700' }]}>
         <Text style={styles.todayEmotionText}>
           Today you're {todayEmotion} 😊
         </Text>
-      </View>
-      <Calendar onMonthChange={setCurrentViewDate} />
-      <MoodCount currentDate={currentViewDate} />
-      <TouchableOpacity style={styles.checkMoodButton}>
+      </View> */}
+
+      <Calendar
+        onMonthChange={handleMonthChange}
+        emotions={emotions}
+      />
+
+      <MoodCount
+        currentDate={currentViewDate}
+        emotions={emotions}
+      />
+
+      <TouchableOpacity
+        style={styles.checkMoodButton}
+        onPress={() => navigation.navigate('MoodCamera')}
+      >
         <Text style={styles.checkMoodText}>Check my Mood</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -292,6 +434,34 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 20,
+  },
+  errorContainer: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: '#FFE5E5',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#FF6B6B',
+    marginBottom: 8,
+  },
+  retryButton: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
   todayEmotionContainer: {
     padding: 16,
@@ -309,7 +479,7 @@ const styles = StyleSheet.create({
   todayEmotionText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff', // Text color should contrast the background
+    color: '#fff',
   },
   calendarContainer: {
     backgroundColor: 'white',
@@ -323,7 +493,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -362,11 +532,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     margin: 2, // Reduce margin for tighter layout
   },
-  
+
   dayText: {
     fontSize: 12, // Smaller text
   },
-  
+
   dayTextFaded: {
     color: '#999',
   },
